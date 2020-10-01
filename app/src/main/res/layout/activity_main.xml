@@ -4,7 +4,8 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context=".MainActivity">
+    tools:context=".MainActivity"
+    tools:visibility="visible">
 
     <TextView
         android:id="@+id/textView2"
@@ -40,20 +41,25 @@
 
     <Button
         android:id="@+id/scanBtn"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
+        android:layout_width="120dp"
+        android:layout_height="90dp"
         android:text="Scan"
-        app:layout_constraintStart_toStartOf="@+id/curNetworkLab"
-        app:layout_constraintTop_toBottomOf="@+id/emergNetworkStatusLab" />
+        android:textSize="18sp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.25"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/emergNetworkStatusLab"
+        app:layout_constraintVertical_bias="0.3" />
 
     <TextView
         android:id="@+id/curNetworkLab"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginStart="16dp"
         android:layout_marginTop="16dp"
         android:text="Currently connected to:"
+        android:textSize="24sp"
+        app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/divider1" />
 
@@ -64,17 +70,23 @@
         android:layout_marginTop="4dp"
         android:text="No scan performed"
         android:textAppearance="@style/TextAppearance.AppCompat.Body1"
+        android:textSize="24sp"
         android:textStyle="bold"
-        app:layout_constraintStart_toStartOf="@+id/curNetworkLab"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/curNetworkLab" />
 
     <Button
         android:id="@+id/connectBtn"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
+        android:layout_width="120dp"
+        android:layout_height="90dp"
         android:layout_marginStart="8dp"
         android:enabled="false"
         android:text="Connect"
-        app:layout_constraintStart_toEndOf="@+id/scanBtn"
+        android:textSize="18sp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.75"
+        app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="@+id/scanBtn" />
+
 </androidx.constraintlayout.widget.ConstraintLayout>
