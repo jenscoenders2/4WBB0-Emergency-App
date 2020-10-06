@@ -13,6 +13,7 @@ import android.net.NetworkRequest;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
 import android.net.wifi.WifiNetworkSpecifier;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.widget.Button;
 import android.widget.TextView;
@@ -20,6 +21,11 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+
+import java.io.IOException;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
 
 public class MainActivity extends AppCompatActivity {
     private TextView emergNetworkStatusLab;
@@ -44,7 +50,7 @@ public class MainActivity extends AppCompatActivity {
 
         // Add click handlers
         scanBtn.setOnClickListener(v -> scanNetworks());
-        activateDropboxBtn.setOnClickListener(v -> activateDropbox());
+        activateDropboxBtn.setOnClickListener(v -> AsyncTask.execute(this::activateDropbox));
 
         // Get system services
         wifiManager = (WifiManager) getSystemService(WIFI_SERVICE);
@@ -77,22 +83,27 @@ public class MainActivity extends AppCompatActivity {
             public void onAvailable(@NonNull Network network) {
                 super.onAvailable(network);
 
-                // Unregister network callback
-                conMgr.unregisterNetworkCallback(networkCallback);
+                // Bind process to network
+                conMgr.bindProcessToNetwork(network);
 
                 // Call event handler for network connection
-                runOnUiThread(() -> onNetworkConnection(network));
+                runOnUiThread(MainActivity.this::onNetworkConnection);
             }
 
             @Override
             public void onUnavailable() {
                 super.onUnavailable();
 
-                // Unregister network callback
-                conMgr.unregisterNetworkCallback(networkCallback);
-
                 // Call event handler for failed network connection
-                runOnUiThread(() -> onFailedNetworkConnection());
+                runOnUiThread(MainActivity.this::onFailedNetworkConnection);
+            }
+
+            @Override
+            public void onLost(@NonNull Network network) {
+                super.onLost(network);
+
+                // Call event handler for lost network connection
+                runOnUiThread(MainActivity.this::onLostNetworkConnection);
             }
         };
     }
@@ -135,7 +146,7 @@ public class MainActivity extends AppCompatActivity {
             int maxLevel = 0;
             String ssid = null;
             for (ScanResult r : wifiManager.getScanResults()) {
-                if (r.SSID.startsWith("[EMERG]]")) {
+                if (r.SSID.startsWith("[EMERG]")) {
                     if (r.level < maxLevel) {
                         maxLevel = r.level;
                         ssid = r.SSID;
@@ -160,10 +171,13 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void connectEmergencyNetwork(final String ssid) {
+        // Unregister previous network callback
+        conMgr.unregisterNetworkCallback(networkCallback);
+
         // Create wifi specifier
         final WifiNetworkSpecifier wifiSpecifier = new WifiNetworkSpecifier.Builder()
                 .setSsid(ssid)
-                .setIsEnhancedOpen(true)
+                .setWpa2Passphrase("Group91EmergDropboxV1")
                 .build();
 
         // Create network request
@@ -179,9 +193,7 @@ public class MainActivity extends AppCompatActivity {
         scanBtn.setEnabled(true);
     }
 
-    private void onNetworkConnection(final Network network) {
-        Toast.makeText(this, "Connected!", Toast.LENGTH_LONG).show();
-
+    private void onNetworkConnection() {
         // Enable activate button
         activateDropboxBtn.setEnabled(true);
 
@@ -197,7 +209,25 @@ public class MainActivity extends AppCompatActivity {
         emergNetworkStatusLab.setText("Could not connect to emergency network");
     }
 
+    private void onLostNetworkConnection() {
+        // Set status text
+        emergNetworkStatusLab.setText("Network connection closed");
+
+        // Disable activate button
+        activateDropboxBtn.setEnabled(false);
+    }
+
     private void activateDropbox() {
-        // TODO: Send signal to open / close dropbox
+        // Create target socket
+        // TODO: Send actual command message
+        try {
+            DatagramSocket s = new DatagramSocket();
+            final byte[] buf = "TEST".getBytes();
+            DatagramPacket p = new DatagramPacket(buf, buf.length, InetAddress.getByName("192.168.4.1"), 6969);
+            s.send(p);
+            s.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 }
