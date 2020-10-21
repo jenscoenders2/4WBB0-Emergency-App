@@ -22,12 +22,21 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
+import java.io.BufferedInputStream;
 import java.io.IOException;
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.InetAddress;
+import java.io.InputStream;
+import java.io.PrintStream;
+import java.net.Socket;
+import java.util.concurrent.TimeoutException;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class MainActivity extends AppCompatActivity {
+    private static final String EMERGENCY_NETWORK_PREFIX = "[EMERG]";
+    private static final String EMERGENCY_NETWORK_PASSWORD = "Group91EmergDropboxV1";
+
+    private static final int WAIT_TIME = 100;
+
     private TextView emergNetworkStatusLab;
     private Button scanBtn;
     private Button activateDropboxBtn;
@@ -37,6 +46,9 @@ public class MainActivity extends AppCompatActivity {
 
     private BroadcastReceiver wifiScanReceiver;
     private ConnectivityManager.NetworkCallback networkCallback;
+
+    private boolean dropboxIsOpen = false;
+    private boolean networkCallbackIsRegistered = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -59,6 +71,7 @@ public class MainActivity extends AppCompatActivity {
         // Request required permissions
         requestPermissions(new String[]{
                 Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
                 Manifest.permission.ACCESS_WIFI_STATE,
                 Manifest.permission.CHANGE_WIFI_STATE,
                 Manifest.permission.ACCESS_NETWORK_STATE,
@@ -102,6 +115,9 @@ public class MainActivity extends AppCompatActivity {
             public void onLost(@NonNull Network network) {
                 super.onLost(network);
 
+                // Unbind process from network
+                conMgr.bindProcessToNetwork(null);
+
                 // Call event handler for lost network connection
                 runOnUiThread(MainActivity.this::onLostNetworkConnection);
             }
@@ -121,9 +137,9 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
             }
-        } else {
-            super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         }
+
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
     }
 
     private void scanNetworks() {
@@ -134,7 +150,7 @@ public class MainActivity extends AppCompatActivity {
         if (wifiManager.startScan()) {
             scanBtn.setEnabled(false);
             activateDropboxBtn.setEnabled(false);
-            emergNetworkStatusLab.setText("Scanning for emergency networks...");
+            emergNetworkStatusLab.setText(R.string.status_scanning);
         }
     }
 
@@ -143,41 +159,43 @@ public class MainActivity extends AppCompatActivity {
         boolean success = rIntent.getBooleanExtra(WifiManager.EXTRA_RESULTS_UPDATED, false);
         if (success) {
             // Find strongest emergency network (NOTE: level is expressed in dBm)
-            int maxLevel = 0;
+            int strongestLevel = 0;
             String ssid = null;
             for (ScanResult r : wifiManager.getScanResults()) {
-                if (r.SSID.startsWith("[EMERG]")) {
-                    if (r.level < maxLevel) {
-                        maxLevel = r.level;
+                if (r.SSID.startsWith(EMERGENCY_NETWORK_PREFIX)) {
+                    if (r.level < strongestLevel) {
+                        strongestLevel = r.level;
                         ssid = r.SSID;
                     }
                 }
             }
 
             if (ssid != null) {
-                // Set status label
-                emergNetworkStatusLab.setText("Connecting to strongest emergency network: " + ssid);
+                emergNetworkStatusLab.setText(getString(R.string.status_connecting, ssid));
 
                 // Connect to emergency network
                 connectEmergencyNetwork(ssid);
             } else {
-                emergNetworkStatusLab.setText("No emergency networks found");
+                emergNetworkStatusLab.setText(R.string.status_none_found);
                 scanBtn.setEnabled(true);
             }
         } else {
-            emergNetworkStatusLab.setText("Could not scan for networks! Please try again later.");
+            emergNetworkStatusLab.setText(R.string.status_scan_failed);
             scanBtn.setEnabled(true);
         }
     }
 
     private void connectEmergencyNetwork(final String ssid) {
         // Unregister previous network callback
-        conMgr.unregisterNetworkCallback(networkCallback);
+        if (networkCallbackIsRegistered) {
+            conMgr.unregisterNetworkCallback(networkCallback);
+            networkCallbackIsRegistered = false;
+        }
 
         // Create wifi specifier
         final WifiNetworkSpecifier wifiSpecifier = new WifiNetworkSpecifier.Builder()
                 .setSsid(ssid)
-                .setWpa2Passphrase("Group91EmergDropboxV1")
+                .setWpa2Passphrase(EMERGENCY_NETWORK_PASSWORD)
                 .build();
 
         // Create network request
@@ -187,6 +205,7 @@ public class MainActivity extends AppCompatActivity {
                 .build();
 
         // Request network connection
+        networkCallbackIsRegistered = true;
         conMgr.requestNetwork(networkRequest, networkCallback);
 
         // Re-enable scan button
@@ -194,40 +213,120 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void onNetworkConnection() {
-        // Enable activate button
-        activateDropboxBtn.setEnabled(true);
-
         // Set status text
-        emergNetworkStatusLab.setText("Connected to emergency network");
+        emergNetworkStatusLab.setText(R.string.status_connected);
+
+        // Retrieve current dropbox state
+        AsyncTask.execute(this::updateDropboxState);
     }
 
     private void onFailedNetworkConnection() {
         // Show message
-        Toast.makeText(MainActivity.this, "Could not connect!", Toast.LENGTH_LONG).show();
+        Toast.makeText(MainActivity.this, R.string.toast_connect_failed, Toast.LENGTH_LONG).show();
 
         // Set status text
-        emergNetworkStatusLab.setText("Could not connect to emergency network");
+        emergNetworkStatusLab.setText(R.string.status_connect_failed);
     }
 
     private void onLostNetworkConnection() {
         // Set status text
-        emergNetworkStatusLab.setText("Network connection closed");
+        emergNetworkStatusLab.setText(R.string.status_network_lost);
 
         // Disable activate button
         activateDropboxBtn.setEnabled(false);
     }
 
+    private void updateDropboxState() {
+        sendDropboxCommand("STATUS", false);
+    }
+
     private void activateDropbox() {
-        // Create target socket
-        // TODO: Send actual command message
-        try {
-            DatagramSocket s = new DatagramSocket();
-            final byte[] buf = "TEST".getBytes();
-            DatagramPacket p = new DatagramPacket(buf, buf.length, InetAddress.getByName("192.168.4.1"), 6969);
-            s.send(p);
-            s.close();
-        } catch (IOException e) {
-            e.printStackTrace();
+        runOnUiThread(() -> activateDropboxBtn.setEnabled(false));
+
+        if (dropboxIsOpen) {
+            sendDropboxCommand("CLOSE", true);
+        } else {
+            sendDropboxCommand("OPEN", true);
         }
+    }
+
+    /**
+     * Sends a command to the drop box and updates the dropboxIsOpen parameter based on the response.
+     *
+     * @param command The command to send
+     * @param alwaysEnableActionButton Whether to enable the action button, regardless of command success
+     */
+    private void sendDropboxCommand(final String command, final boolean alwaysEnableActionButton) {
+        try {
+            // Open socket to dropbox
+            Socket s = new Socket("192.168.4.1", 6969);
+            BufferedInputStream is = new BufferedInputStream(s.getInputStream());
+            PrintStream ps = new PrintStream(s.getOutputStream());
+
+            // Request dropbox status and read response
+            ps.print(command);
+            String response = readResponse(is);
+
+            // Process answer
+            Matcher m = Pattern.compile("^OPEN=(\\d)$").matcher(response);
+            if (m.find()) {
+                dropboxIsOpen = m.group(1).equals("1");
+            } else {
+                throw new Exception("Invalid response");
+            }
+
+            // Close socket
+            ps.close();
+            is.close();
+            s.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+
+            if (!alwaysEnableActionButton) {
+                return;
+            }
+        }
+
+        // Update activate dropbox button
+        runOnUiThread(() -> {
+            activateDropboxBtn.setEnabled(true);
+            if (dropboxIsOpen) {
+                activateDropboxBtn.setText(R.string.action_close);
+            } else {
+                activateDropboxBtn.setText(R.string.action_open);
+            }
+        });
+    }
+
+    /**
+     * Reads a linefeed-terminated response from the input stream.
+     *
+     * @param is The input stream to read from
+     * @return The response string without the linefeed character
+     * @throws TimeoutException When response takes longer than WAIT_TIME milliseconds
+     * @throws IOException When an IOException occurs when reading from the input stream
+     * @throws InterruptedException When the executing thread is interrupted
+     */
+    private String readResponse(BufferedInputStream is) throws TimeoutException, IOException, InterruptedException {
+        int timeout = 5000;
+        StringBuilder response = new StringBuilder();
+        while (timeout > 0) {
+            if (is.available() > 0) {
+                char c = (char) is.read();
+                if (c == '\n') {
+                    break;
+                } else {
+                    response.append(c);
+                }
+            } else {
+                Thread.sleep(WAIT_TIME);
+                timeout -= WAIT_TIME;
+            }
+        }
+        if (timeout == 0) {
+            throw new TimeoutException("Request timed out");
+        }
+
+        return response.toString();
     }
 }

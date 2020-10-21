@@ -1,3 +1,15 @@
 <resources>
     <string name="app_name">EmergencyApp</string>
+
+    <string name="status_scanning">Scanning for emergency networks...</string>
+    <string name="status_none_found">No emergency networks found</string>
+    <string name="status_scan_failed">Could not scan for networks! Please try again later.</string>
+    <string name="status_connecting">Connecting to strongest emergency network: %s</string>
+    <string name="status_connected">Connected to emergency network</string>
+    <string name="status_connect_failed">Could not connect to emergency network</string>
+    <string name="status_network_lost">Network connection closed</string>
+    <string name="action_close">Close</string>
+    <string name="action_open">Open</string>
+
+    <string name="toast_connect_failed">Could not connect!</string>
 </resources>
